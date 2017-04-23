@@ -13,4 +13,4 @@ if  [[ -e thumbnails.zip ]]
     rm thumbnails.zip
 fi
 
-zip -r thumbnails.zip index.js node_modules LICENSE package.json
+zip -r thumbnails.zip index.js node_modules LICENSE package.json configuration.js

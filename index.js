@@ -5,23 +5,7 @@ var fs = require("fs");
 var mktemp = require("mktemp");
 
 
-var GLOBAL_CONFIGURATION = {
-
-    thumb150x150: {
-        width: 150,
-        height: 150,
-        postfix: '-150x150',
-        fileMatch: /^pub/gi
-    },
-
-    default: {
-        allowedFileTypes: ['png', 'jpg', 'jpeg', 'bmp', 'tiff', 'pdf', 'gif'],
-        acl: 'public-read',
-        quality: 90,
-        interlace: 'Line'
-    }
-
-};
+var GLOBAL_CONFIGURATION = require('./configuration').configuration;
 
 
 var s3 = new AWS.S3();
