@@ -11,7 +11,23 @@
   ],
   "author": "martinopic",
   "license": "MIT",
-  "homepage": "https://github.com/trinketapp/aws-lambda-create-thumbnail",
+  "homepage": "https://github.com/digitalascetic/aws-s3-lambda-thumbnail-creator",
+  "bugs": {
+    "url": "https://github.com/digitalascetic/aws-s3-lambda-thumbnail-creator/issues"
+  },
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "http://www.opensource.org/licenses/mit-license.php"
+    }
+  ],
+  "main": "./index",
+  "maintainers": [
+    {
+      "name": "martinopic",
+      "email": "mp@ascetic.io"
+    }
+  ],
   "dependencies": {
     "async": "^0.9.0",
     "aws-sdk": "^2.1.21",
