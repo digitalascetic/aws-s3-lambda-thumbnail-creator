@@ -1,0 +1,22 @@
+{
+  "name": "aws-s3-lambda-thumbnail-creator",
+  "version": "1.0.0",
+  "description": "Automatically create thumbnails according to a given configuration when images are added to an AWS S3 bucket",
+  "main": "index.js",
+  "keywords": [
+    "AWS",
+    "ImageMagick",
+    "S3",
+    "Thumbnail"
+  ],
+  "author": "martinopic",
+  "license": "MIT",
+  "homepage": "https://github.com/trinketapp/aws-lambda-create-thumbnail",
+  "dependencies": {
+    "async": "^0.9.0",
+    "aws-sdk": "^2.1.21",
+    "gm": "^1.17.0",
+    "request": "^2.55.0",
+    "mktemp": "^0.4.0"
+  }
+}
