@@ -8,10 +8,12 @@ var mktemp = require("mktemp");
 var GLOBAL_CONFIGURATION = require('./configuration').configuration;
 
 
-var s3 = new AWS.S3();
+var s3 = new AWS.S3({httpOptions: {timeout: 3000}});
 
 
 exports.handler = function (event, context) {
+
+    console.log("Entering thumbnail generator.")
 
     var bucket = event.Records[0].s3.bucket.name;
     var srcKey = decodeURIComponent(event.Records[0].s3.object.key).replace(/\+/g, ' ');
@@ -62,23 +64,7 @@ exports.handler = function (event, context) {
                     s3.headObject({
                         Bucket: bucket,
                         Key: srcKey
-                    }, function (err, data) {
-                        console.log("PIPPO");
-                        if (err) {
-                            console.error("Error retrieving object metadata: " + err);
-                            return callback("Error retrieving object metadata: " + err);
-                        } else {
-                            if (data.Metadata && data.Metadata['thumbnail']) {
-                                console.error("Will not create thumbnail of thumbnail [" + bucket + ":" + srcKey + "]");
-                                return callback("Will not create thumbnail of thumbnail [" + bucket + ":" + srcKey + "]");
-                            }
-                            if (data.ContentType.substr(0, 5) != 'image') {
-                                console.error("Will not create thumbnail as [" + bucket + ":" + srcKey + "] is not an image: [" + data.contentType + "]");
-                                return callback("Will not create thumbnail as [" + bucket + ":" + srcKey + "] is not an image: [" + data.contentType + "]");
-                            }
-                            return callback(null);
-                        }
-                    });
+                    }, callback);
 
                 },
 
@@ -89,18 +75,13 @@ exports.handler = function (event, context) {
                     s3.getObject({
                         Bucket: bucket,
                         Key: srcKey
-                    }, function (err, result) {
-                        if (err) {
-                            callback(err);
-                        } else {
-                            callback(null, result);
-                        }
-                    });
+                    }, callback);
                 },
 
                 function createThumbnail(response, callback) {
 
                     var temp_file, image;
+
                     console.log("Creating thumbnail");
 
                     if (fileType === "pdf") {
@@ -141,6 +122,7 @@ exports.handler = function (event, context) {
                 },
 
                 function uploadThumbnail(contentType, data, callback) {
+
                     console.log("Uploading thumbnail");
 
                     s3.putObject({
@@ -152,13 +134,7 @@ exports.handler = function (event, context) {
                         Metadata: {
                             thumbnail: 'TRUE'
                         }
-                    }, function (err, data) {
-                        if (err) {
-                            callback(err);
-                        } else {
-                            callback(null);
-                        }
-                    });
+                    }, callback);
                 }
 
             ],
