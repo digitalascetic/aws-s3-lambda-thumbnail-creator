@@ -16,6 +16,7 @@ exports.handler = function (event, context) {
     var bucket = event.Records[0].s3.bucket.name;
     var srcKey = decodeURIComponent(event.Records[0].s3.object.key).replace(/\+/g, ' ');
     var fileType = srcKey.match(/\.\w+$/);
+    fileType = fileType[0].substr(1);
 
     if (fileType === null) {
         console.error("Invalid file type found for key: " + srcKey);
@@ -28,6 +29,8 @@ exports.handler = function (event, context) {
             continue;
         }
 
+        console.log("STANZA: " + confKey);
+
         var conf = {};
         Object.assign(conf, GLOBAL_CONFIGURATION.default);
         Object.assign(conf, GLOBAL_CONFIGURATION[confKey]);
@@ -39,48 +42,66 @@ exports.handler = function (event, context) {
 
         var dstKey = (conf.prefix ? conf.prefix : '') + srcKey.replace(/\.\w+$/, (conf.postfix ? conf.postfix : '') + '.jpg');
 
-        console.log("Creating thumbnail '" + confKey + "' from " + srcKey + " as " + dstKey);
-
-        fileType = fileType[0].substr(1);
+        console.log('FILE TYPES', conf.allowedFileTypes);
+        console.log('SRC KEY', srcKey);
+        console.log('FILE TYPE', fileType);
 
         if (conf.allowedFileTypes.indexOf(fileType) === -1) {
             console.error("Filetype " + fileType + " not valid for thumbnail, exiting");
             return;
         }
 
+        console.log("Creating thumbnail '" + confKey + "' from " + srcKey + " as " + dstKey);
+
         async.waterfall([
 
-                function checkIsNotThumbnail(next) {
+                function checkIsNotThumbnail(callback) {
+
+                    console.log("Checking if the image " + bucket + ":" + srcKey + " is a thumbnail");
+
                     s3.headObject({
                         Bucket: bucket,
                         Key: srcKey
                     }, function (err, data) {
+                        console.log("PIPPO");
                         if (err) {
-                            console.error("Error retrieving object metadata: " + err, err.stack);
+                            console.error("Error retrieving object metadata: " + err);
+                            return callback("Error retrieving object metadata: " + err);
                         } else {
                             if (data.Metadata && data.Metadata['thumbnail']) {
-                                console.log("Will not create thumbnail of thumbnail [" + bucket + ":" + srcKey + "]");
-                                return;
+                                console.error("Will not create thumbnail of thumbnail [" + bucket + ":" + srcKey + "]");
+                                return callback("Will not create thumbnail of thumbnail [" + bucket + ":" + srcKey + "]");
                             }
                             if (data.ContentType.substr(0, 5) != 'image') {
-                                console.warn("Will not create thumbnail as [" + bucket + ":" + srcKey + "] is not an image: [" + data.contentType + "]");
-                                return;
+                                console.error("Will not create thumbnail as [" + bucket + ":" + srcKey + "] is not an image: [" + data.contentType + "]");
+                                return callback("Will not create thumbnail as [" + bucket + ":" + srcKey + "] is not an image: [" + data.contentType + "]");
                             }
-                            next();
+                            return callback(null);
                         }
-                    })
+                    });
+
                 },
 
-                function download(next) {
+                function download(callback) {
                     //Download the image from S3
+                    console.log("Downloading");
+
                     s3.getObject({
                         Bucket: bucket,
                         Key: srcKey
-                    }, next);
+                    }, function (err, result) {
+                        if (err) {
+                            callback(err);
+                        } else {
+                            callback(null, result);
+                        }
+                    });
                 },
 
-                function createThumbnail(response, next) {
+                function createThumbnail(response, callback) {
+
                     var temp_file, image;
+                    console.log("Creating thumbnail");
 
                     if (fileType === "pdf") {
                         temp_file = mktemp.createFileSync("/tmp/" + new Date().getTime() + ".pdf");
@@ -110,15 +131,18 @@ exports.handler = function (event, context) {
                                 }
 
                                 if (err) {
-                                    next(err);
+                                    callback(err);
                                 } else {
-                                    next(null, response.contentType, buffer);
+                                    callback(null, response.contentType, buffer);
                                 }
                             });
+
                     });
                 },
 
-                function uploadThumbnail(contentType, data, next) {
+                function uploadThumbnail(contentType, data, callback) {
+                    console.log("Uploading thumbnail");
+
                     s3.putObject({
                         Bucket: bucket,
                         Key: dstKey,
@@ -128,22 +152,31 @@ exports.handler = function (event, context) {
                         Metadata: {
                             thumbnail: 'TRUE'
                         }
-                    }, next);
+                    }, function (err, data) {
+                        if (err) {
+                            callback(err);
+                        } else {
+                            callback(null);
+                        }
+                    });
                 }
 
             ],
-            function (err) {
+            function (err, result) {
                 if (err) {
                     console.error(
                         "Unable to generate thumbnail for '" + bucket + "/" + srcKey + "'" +
                         " due to error: " + err
                     );
                 } else {
-                    console.log("Created thumbnail " + confKey + " for '" + bucket + "/" + srcKey + "'");
+                    console.log("Created thumbnail " + confKey + " at " + dstKey + " for '" + bucket + "/" + srcKey + "'");
                 }
-
-                context.done();
             });
 
     }
+
+    console.log("Exiting thumbnail generator.");
+
+    context.done();
+
 };
