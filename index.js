@@ -4,12 +4,9 @@ var gm = require("gm").subClass({imageMagick: true});
 var fs = require("fs");
 var mktemp = require("mktemp");
 
-
 var GLOBAL_CONFIGURATION = require('./configuration').configuration;
 
-
 var s3 = new AWS.S3({httpOptions: {timeout: 3000}});
-
 
 exports.handler = function (event, context) {
 
@@ -31,128 +28,100 @@ exports.handler = function (event, context) {
             continue;
         }
 
-        console.log("STANZA: " + confKey);
-
         var conf = {};
         Object.assign(conf, GLOBAL_CONFIGURATION.default);
         Object.assign(conf, GLOBAL_CONFIGURATION[confKey]);
 
         if (conf.fileMatch && !srcKey.match(conf.fileMatch)) {
             console.log("Not creating thumbnail for [" + srcKey + "]  as it dos not match [" + conf.fileMatch + "]");
-            return;
+            continue;
         }
 
         var dstKey = (conf.prefix ? conf.prefix : '') + srcKey.replace(/\.\w+$/, (conf.postfix ? conf.postfix : '') + '.jpg');
 
-        console.log('FILE TYPES', conf.allowedFileTypes);
-        console.log('SRC KEY', srcKey);
-        console.log('FILE TYPE', fileType);
-
         if (conf.allowedFileTypes.indexOf(fileType) === -1) {
             console.error("Filetype " + fileType + " not valid for thumbnail, exiting");
-            return;
+            continue;
         }
 
         console.log("Creating thumbnail '" + confKey + "' from " + srcKey + " as " + dstKey);
 
-        async.waterfall([
-
-                function checkIsNotThumbnail(callback) {
-
-                    console.log("Checking if the image " + bucket + ":" + srcKey + " is a thumbnail");
-
-                    s3.headObject({
-                        Bucket: bucket,
-                        Key: srcKey
-                    }, callback);
-
-                },
-
-                function download(callback) {
-                    //Download the image from S3
-                    console.log("Downloading");
-
-                    s3.getObject({
-                        Bucket: bucket,
-                        Key: srcKey
-                    }, callback);
-                },
-
-                function createThumbnail(response, callback) {
-
-                    var temp_file, image;
-
-                    console.log("Creating thumbnail");
-
-                    if (fileType === "pdf") {
-                        temp_file = mktemp.createFileSync("/tmp/" + new Date().getTime() + ".pdf");
-                        fs.writeFileSync(temp_file, response.Body);
-                        image = gm(temp_file + "[0]");
-                    } else if (fileType === 'gif') {
-                        temp_file = mktemp.createFileSync("/tmp/" + new Date().getTime() + ".gif");
-                        fs.writeFileSync(temp_file, response.Body);
-                        image = gm(temp_file + "[0]");
-                    } else {
-                        image = gm(response.Body);
-                    }
-
-                    image.size(function (err, size) {
-
-                        var scalingFactor = Math.min(1, conf.width / size.width, conf.height / size.height);
-                        var width = scalingFactor * size.width;
-                        var height = scalingFactor * size.height;
-
-                        this.resize(width, height)
-                            .strip() // Removes any profiles or comments. Work with pure data
-                            .interlace(confKey.interlace ? confKey.interlace : 'None') // Line interlacing creates a progressive build up
-                            .quality(confKey.quality ? confKey.quality : 100)
-                            .toBuffer("jpeg", function (err, buffer) {
-                                if (temp_file) {
-                                    fs.unlinkSync(temp_file);
-                                }
-
-                                if (err) {
-                                    callback(err);
-                                } else {
-                                    callback(null, response.contentType, buffer);
-                                }
-                            });
-
-                    });
-                },
-
-                function uploadThumbnail(contentType, data, callback) {
-
-                    console.log("Uploading thumbnail");
-
-                    s3.putObject({
-                        Bucket: bucket,
-                        Key: dstKey,
-                        Body: data,
-                        ContentType: "image/jpeg",
-                        ACL: conf.acl,
-                        Metadata: {
-                            thumbnail: 'TRUE'
-                        }
-                    }, callback);
-                }
-
-            ],
-            function (err, result) {
-                if (err) {
-                    console.error(
-                        "Unable to generate thumbnail for '" + bucket + "/" + srcKey + "'" +
-                        " due to error: " + err
-                    );
-                } else {
-                    console.log("Created thumbnail " + confKey + " at " + dstKey + " for '" + bucket + "/" + srcKey + "'");
-                }
-            });
+        createThumbnail(bucket, srcKey, dstKey, Object.assign({}, conf), confKey);
 
     }
 
-    console.log("Exiting thumbnail generator.");
-
-    context.done();
-
 };
+
+function createThumbnail(bucket, srcKey, dstKey, conf, confKey) {
+
+    async.waterfall([
+
+            function checkIsNotThumbnail(callback) {
+
+                console.log("Checking if the image " + bucket + ":" + srcKey + " is a thumbnail");
+
+                s3.headObject({
+                    Bucket: bucket,
+                    Key: srcKey
+                }, callback);
+
+            },
+
+            function download(response, callback) {
+                //Download the image from S3
+                console.log("Downloading " + srcKey);
+
+                s3.getObject({
+                    Bucket: bucket,
+                    Key: srcKey
+                }, callback);
+            },
+
+            function createThumbnail(response, callback) {
+
+                console.log("Creating thumbnail " + confKey);
+
+                gm(response.Body, srcKey)
+                    .resize(conf.width, conf.height ? conf.height : null)
+                    .strip() // Removes any profiles or comments. Work with pure data
+                    .interlace(conf.interlace ? conf.interlace : 'None') // Line interlacing creates a progressive build up
+                    .quality(conf.quality ? conf.quality : 100)
+                    .toBuffer("jpeg", function (err, buffer) {
+                        if (err) {
+                            callback(err);
+                        } else {
+                            callback(null, response.contentType, buffer);
+                        }
+                    });
+            },
+
+            function uploadThumbnail(contentType, data, callback) {
+
+                console.log("Uploading thumbnail " + dstKey);
+
+                s3.putObject({
+                    Bucket: bucket,
+                    Key: dstKey,
+                    Body: data,
+                    ContentType: "image/jpeg",
+                    ACL: conf.acl,
+                    Metadata: {
+                        thumbnail: 'TRUE'
+                    }
+                }, callback);
+            }
+
+        ],
+        function (err, result) {
+            if (err) {
+                console.error(
+                    "Unable to generate thumbnail for '" + bucket + "/" + srcKey + "'" +
+                    " due to error: " + err
+                );
+            } else {
+                console.log("Created thumbnail " + confKey + " at " + dstKey + " for '" + bucket + "/" + srcKey + "'");
+            }
+        }
+    );
+
+}
